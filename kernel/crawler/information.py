@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
+import json
 import queue
+import httpx
 import requests
 import threading
 import os
@@ -12,15 +14,37 @@ from kernel.crawler.models import CompanyInfo
 class Information:
     
     def __init__(self):
-        pass
+        self.db_name = 'company_info'
+        self.db = Path('db')
+        self.file_path = self.db / self.db_name
+    
+    def save2db(self, datas):
+        with open(self.file_path, "w", encoding="utf-8") as f:
+            json.dump(datas, f, ensure_ascii=False, indent=2)
+            
+    def read_from_db(self):
+        
+        if not self.db.exists():
+            self.db.mkdir(parents=True, exist_ok=True)
+            
+        if self.file_path.exists():
+            print('get company info from db.')
+            with open(self.file_path, "r", encoding="utf-8") as f:
+                datas = json.load(f)
+        else:
+            datas = self.parse_company_information()
+        return datas
     
     def parse_company_information(self):
         'get company info'
+        print('get company info from url.')
         def fetch_data_1(result_queue):
             '上市'
             try:
-                req = requests.get('https://openapi.twse.com.tw/v1/opendata/t187ap03_L')
-                data_dict = req.json()
+                url = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_L'
+                with httpx.Client(verify=False) as client:
+                    resp = client.get(url)
+                    data_dict = resp.json()
                 key_mapping = {
                         "公司代號": "stock_id",
                         "公司名稱": "company_name",
@@ -41,7 +65,7 @@ class Information:
                         for item in data_dict]
                 for i in parsed_data:
                     i['market_type'] = '上市'
-                print(parsed_data[0])
+                # print(parsed_data[0])
                 result_queue.put(("One", parsed_data))
             except Exception as e:
                 result_queue.put(("One", f"錯誤: {str(e)}"))
@@ -49,6 +73,10 @@ class Information:
         def fetch_data_2(result_queue):
             '上櫃'
             try:
+                # url = 'https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap03_O'
+                # with httpx.Client(verify=True) as client:
+                #     resp = client.get(url)
+                #     data_dict = resp.json()
                 req = requests.get('https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap03_O')
                 data_dict = req.json()
                 key_mapping = {
@@ -73,7 +101,6 @@ class Information:
                         for item in data_dict]
                 for t in parsed_data:
                     t['market_type'] = '上櫃'
-                print(parsed_data[0])
                 result_queue.put(("Two", parsed_data))
             except Exception as e:
                 result_queue.put(("Two", f"錯誤: {str(e)}"))
@@ -91,7 +118,7 @@ class Information:
             if type(data) != list:
                 print(data)
             results.extend(data)
-        
+        self.save2db(results)
         return results   
     
-info = Information()
+company_info = Information()
